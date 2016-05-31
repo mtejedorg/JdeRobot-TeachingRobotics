@@ -2,44 +2,114 @@ from sensors import sensor
 import numpy as np
 import threading
 import cv2
-import math
+
+lastW = 0
+KP = 1
+KD = 1
+
+def massCenter(binImg):
+
+    #binImg= binImg[:len(binImg)/2]
+
+    mm = cv2.moments(binImg, True)
+
+    center = len(binImg[1])/2
+
+    if (mm['m00'] != 0):
+        masscentery = mm['m01']/mm['m00']
+        masscenterx = mm['m10']/mm['m00']
+    else:
+        masscentery = center;
+        masscenterx = center;
+
+    return masscenterx
+
+def massCenter2Cams(binImgLeft, binImgRight):
+    massCenterLeft = massCenter(binImgLeft)
+    massCenterRight = massCenter(binImgRight)
+
+    massCenterMean = massCenterLeft+massCenterRight
+    massCenterMean = massCenterMean/2
+
+    return massCenterMean
+
+def angle2Cams(binImgLeft, binImgRight):
+    massCenterLeft = massCenter(binImgLeft)
+    massCenterRight = massCenter(binImgRight)
+
+    centerLeft = len(binImgLeft[1])/2
+    centerRight = len(binImgRight[1])/2
 
 
+    leftDif = massCenterLeft-centerLeft
+    rightDif = massCenterRight-centerRight
 
-#def YUVa255(Y, U, V):
-#    Y = Y * 255
-#    U = (U + 0.5) / 0.8 * 255
-#    V = (V + 0.6) / 1.2 * 255
-#    return Y, U, V
+    meanDif = (leftDif+rightDif)/2
 
-def angle(binImg):
-    first = 0
-    last = 0
+    meanCenter = (centerLeft+centerRight)/2
 
-    j = -1
-    for i in binImg[10]:
-        j = j+1
-        if not first and i:
-            first = j
+    currentW = - KP * meanDif/meanCenter
 
-    reversebinImg = binImg[::-1]
+    lastW = currentW
 
-    j = 0
-    for i in reversebinImg[10]:
-        j = j+1
-        if not last and i:
-            last = j
+    diffCorr = KD * (abs(lastW) - abs(currentW))
 
-    linecenter = last - first
-    linecenter = linecenter/2
+    if currentW != 0:
+        sign = currentW/abs(currentW)
+    else:
+        sign = 1
 
-    center = len(binImg)/2
+    absangle = abs(currentW) - diffCorr
 
-    k = linecenter-center
+    angle = sign * absangle
 
-    angle = k*math.pi/2/center
+    if abs(angle) > 1:
+        angle = angle/abs(angle)
 
     return angle
+
+def getSpeed(w, minSpeed = 1, maxSpeed = 10):
+    if (minSpeed > maxSpeed):       # Prevents wrong args
+        aux = minSpeed
+        minSpeed = maxSpeed
+        maxSpeed = aux
+
+    if (minSpeed == maxSpeed):
+        return minSpeed
+    else:
+        speedRange = maxSpeed - minSpeed
+        invW = 1-w
+        speed = abs(invW)*speedRange+minSpeed
+        return speed
+
+def getSpeedByCams(binImgLeft, binImgRight, minSpeed = 1, maxSpeed = 5):
+    if (minSpeed > maxSpeed):
+        aux = minSpeed
+        minSpeed = maxSpeed
+        maxSpeed = aux
+
+    if (minSpeed == maxSpeed):
+        return minSpeed
+    else:
+        dest = massCenter2Cams(binImgLeft[260:300], binImgRight[260:300])
+        current = massCenter2Cams(binImgLeft[400:450], binImgRight[400:450])
+        movement = dest-current
+        if (abs(movement) < 10):
+            return maxSpeed
+        else:
+            return minSpeed
+
+
+        """
+        if(abs(movement) > len(binImg[0]/4)):
+            return minSpeed
+        else:
+            speedRange = maxSpeed - minSpeed
+            invMovement = len(binImg[0]/4)-movement
+            normInvMovement = invMovement/len(binImg[0]/4)
+            speed = normInvMovement*speedRange+minSpeed
+            return speed
+        """
 
 
 class MyAlgorithm():
@@ -55,33 +125,32 @@ class MyAlgorithm():
         imageLeft = self.sensor.getImageLeft()
         imageRight = self.sensor.getImageRight()
 
-        # Convert BGR to HSV
         iLhsv = cv2.cvtColor(imageLeft, cv2.COLOR_RGB2HSV)
-        # lowpass = [0, -0.2, 0.25]
-        # highpass = [0.38, 0, 0.48]
-        # lowpass = YUVa255(*lowpass)
-        # highpass = YUVa255(*highpass)
+        iRhsv = cv2.cvtColor(imageRight, cv2.COLOR_RGB2HSV)
 
         lowpass = (0, 207, 69)
         highpass = (10, 255, 198)
 
-        ILhsvInRange = cv2.inRange(iLhsv, lowpass, highpass)
-        mm = cv2.moments(ILhsvInRange)
-        cy = mm['m10']/'m00'
+        ILhsvInRangeLeft = cv2.inRange(iLhsv, lowpass, highpass)
+        ILhsvInRangeRight = cv2.inRange(iRhsv, lowpass, highpass)
 
-        IlhsvInRange3channels = np.dstack((ILhsvInRange, ILhsvInRange, ILhsvInRange))
+        IlhsvInRange3channelsLeft = np.dstack((ILhsvInRangeLeft, ILhsvInRangeLeft, ILhsvInRangeLeft))
+        IlhsvInRange3channelsRight = np.dstack((ILhsvInRangeRight, ILhsvInRangeRight, ILhsvInRangeRight))
 
         # Add your code here
         print "Runing"
 
         #EXAMPLE OF HOW TO SEND INFORMATION TO THE ROBOT ACTUATORS
-        self.sensor.setV(10)
-        self.sensor.setW(angle(ILhsvInRange))
+        w = angle2Cams(ILhsvInRangeRight, ILhsvInRangeLeft)
+        v = getSpeed(w, 2, 2)
+        self.sensor.setV(v)
+        print 'speed: ' + str(v) + ', angle: ' + str(w)
 
+        self.sensor.setW(w)
 
         #SHOW THE FILTERED IMAGE ON THE GUI
-        self.setRightImageFiltered(IlyuvInRange3channels)
-        self.setLeftImageFiltered(IlyuvInRange3channels)
+        self.setRightImageFiltered(IlhsvInRange3channelsRight)
+        self.setLeftImageFiltered(IlhsvInRange3channelsLeft)
 
 
 
