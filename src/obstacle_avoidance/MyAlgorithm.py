@@ -12,7 +12,7 @@ import math
 from Target import Target
 from Parser import Parser
 
-strength = 1.5
+strength = 4
 
 
 def abs_2_rel_coord(x, y, rx, ry, rt):
@@ -22,7 +22,6 @@ def abs_2_rel_coord(x, y, rx, ry, rt):
 
     # Rotate with current angle
     x = dx * math.cos(-rt) - dy * math.sin(-rt)
-    x = -x
     y = dx * math.sin(-rt) + dy * math.cos(-rt)
 
     return x, y
@@ -39,13 +38,14 @@ def vect2_add (vect1, vect2):
 
 def get_angle(x,y):
     if(y<=0):
-        # 0 becomes 1 and Pi becomes -1
+        # 0 becomes -1 and Pi becomes 1
         mod = math.sqrt(x**2 + y**2)
         ang = math.acos(x/mod)
         ang = -ang/math.pi           # Normalized
         ang = ang*2+1
+        ang = -ang
     else:
-        if x>=0:
+        if x > 0:
             ang = 1
         else:
             ang = -1
@@ -70,10 +70,8 @@ def parsed_laser_to_GUI(laser):
     laser_vectorized = []
     for d, a in laser:
         # (4.2.1) laser into GUI reference system
-        print str(d) + "," + str(a) + " becomes ",
         x = d * math.cos(a) * -1
         y = d * math.sin(a) * -1
-        print "(" + str(x) + "," + str(y) + ")"
         v = [x, y]
         laser_vectorized += [v]
     return laser_vectorized
@@ -97,7 +95,7 @@ def get_main_obstacle(laser_data):
             mindist = dist
             closestindex = i
 
-    if mindist < 1:
+    if mindist < 1.2:
         angle = math.radians(closestindex)
         obstacle = [(strength/mindist, angle+math.pi)]
     else:
@@ -147,17 +145,20 @@ class MyAlgorithm():
         vectx = target_rel[0]
         vecty = target_rel[1]
 
-        print "global " + str(x) + "," + str(y) + " becomes " + str(vectx) + "," + str(vecty)
-
         dist = get_vect_mod(vectx, vecty)
 
-        # Applies the weight
-        vectx = vectx * weight
-        vecty = vecty * weight
+        if dist < 1:
+            weight = weight * 1/dist
 
         vect = (vectx, vecty)
 
-        return vect, dist
+        # Applies the weight
+        vectwx = vectx * weight
+        vectwy = vecty * weight
+
+        vectw = (vectwx, vectwy)
+
+        return vect, vectw, dist
 
     def getNextTarget(self):
         for target in self.targets:
@@ -175,8 +176,8 @@ class MyAlgorithm():
         # Calcular fuerzas
         # Fuerza yo-destino
 
-        weight = 5
-        target_vect, dist = self.get_vect_target(self.targetx, self.targety, weight)
+        weight = 0.7
+        target, targetw, dist = self.get_vect_target(self.targetx, self.targety, weight)
 
         if dist < 1:
             self.currentTarget.setReached(True)
@@ -192,21 +193,20 @@ class MyAlgorithm():
             # vector suma ==> direccion y velocidad
             # Decidir destino
 
-            print "obstacle: " + str(obstacle_vect) + " + target: " + str(target_vect)
-            final_vect = vect2_add(target_vect, obstacle_vect)
+            final_vect = vect2_add(targetw, obstacle_vect)
 
             self.carx = final_vect[0]
             self.cary = final_vect[1]
 
-            final_vect_mod_angle = vect_2_mod_angle_car(self.carx, self.cary)
+            final_vect_mod_angle = vect_2_mod_angle_car(final_vect[0], final_vect[1])
 
             # Traducir a angulo, velocidad
 
             k = 0.5
 
             speed = final_vect_mod_angle[0] * k
-            if speed > 3:
-                speed = 3
+            if speed > 1.5:
+                speed = 1.5
 
             self.sensor.setV(speed)
             self.sensor.setW(final_vect_mod_angle[1])
