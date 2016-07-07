@@ -8,10 +8,16 @@
 import numpy
 from heapq import *
 
+#Manhattan
+def heuristic(a,b):
+    cost = 10
+    return (abs(a[1]-b[1]) + abs(a[0]-b[0]))*cost
 
-def heuristic(a, b):
-    return (b[0] - a[0]) ** 2 + (b[1] - a[1]) ** 2
-
+def dist(current, neighbor):
+    if abs(neighbor[0]-current[0])+abs(neighbor[1]-current[1]) == 2:
+        return 14
+    else:
+        return 10
 
 def astar(array, start, goal):
     neighbors = [(0, 1), (0, -1), (1, 0), (-1, 0), (1, 1), (1, -1), (-1, 1), (-1, -1)]
@@ -38,7 +44,7 @@ def astar(array, start, goal):
         close_set.add(current)
         for i, j in neighbors:
             neighbor = current[0] + i, current[1] + j
-            tentative_g_score = gscore[current] + heuristic(current, neighbor)
+            tentative_g_score = gscore[current] + dist(current, neighbor)
             if 0 <= neighbor[0] < array.shape[0]:
                 if 0 <= neighbor[1] < array.shape[1]:
                     if array[neighbor[0]][neighbor[1]] == 1:
